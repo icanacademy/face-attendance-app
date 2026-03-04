@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        video {
+            width: 100%;
+            max-width: 640px;
+            border: 2px solid #333;
+            background: #000;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            background: #fee;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            padding: 10px;
+            background: #efe;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .info {
+            padding: 10px;
+            background: #eef;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Camera Test Page</h1>
+    <p>This page tests if your browser can access the camera</p>
+
+    <div id="status" class="info">Click "Start Camera" to test</div>
+
+    <button id="startBtn">Start Camera</button>
+    <button id="stopBtn" disabled>Stop Camera</button>
+
+    <br><br>
+
+    <video id="video" autoplay playsinline muted></video>
+
+    <div id="details"></div>
+
+    <script>
+        const video = document.getElementById('video');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const status = document.getElementById('status');
+        const details = document.getElementById('details');
+
+        let stream = null;
+
+        // Check if mediaDevices is available
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            status.className = 'error';
+            status.textContent = 'ERROR: Your browser does not support camera access (getUserMedia not available)';
+        }
+
+        startBtn.onclick = async () => {
+            try {
+                status.className = 'info';
+                status.textContent = 'Requesting camera access...';
+
+                console.log('Requesting camera...');
+
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    },
+                    audio: false
+                });
+
+                console.log('Camera granted!', stream);
+
+                video.srcObject = stream;
+
+                status.className = 'success';
+                status.textContent = '✓ Camera started successfully!';
+
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+
+                // Show stream details
+                const videoTrack = stream.getVideoTracks()[0];
+                const settings = videoTrack.getSettings();
+                details.innerHTML = `
+                    <div class="info">
+                        <strong>Camera Details:</strong><br>
+                        Label: ${videoTrack.label}<br>
+                        Resolution: ${settings.width}x${settings.height}<br>
+                        Device ID: ${settings.deviceId || 'N/A'}
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Camera error:', error);
+                status.className = 'error';
+                status.innerHTML = `
+                    <strong>ERROR:</strong> ${error.name}<br>
+                    <strong>Message:</strong> ${error.message}<br>
+                    <br>
+                    <strong>Common Solutions:</strong><br>
+                    1. Make sure you're accessing via HTTPS or localhost<br>
+                    2. Click "Allow" when browser asks for camera permission<br>
+                    3. Check System Settings → Privacy → Camera<br>
+                    4. Try a different browser (Chrome, Safari, Firefox)
+                `;
+
+                details.innerHTML = `<pre>${JSON.stringify(error, null, 2)}</pre>`;
+            }
+        };
+
+        stopBtn.onclick = () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                stream = null;
+
+                status.className = 'info';
+                status.textContent = 'Camera stopped';
+
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                details.innerHTML = '';
+            }
+        };
+
+        // List available cameras
+        navigator.mediaDevices.enumerateDevices().then(devices => {
+            const cameras = devices.filter(d => d.kind === 'videoinput');
+            if (cameras.length === 0) {
+                status.className = 'error';
+                status.textContent = 'ERROR: No cameras detected on this device';
+            } else {
+                const cameraList = cameras.map((c, i) =>
+                    `${i + 1}. ${c.label || 'Camera ' + (i + 1)}`
+                ).join('<br>');
+
+                details.innerHTML = `
+                    <div class="info">
+                        <strong>Available Cameras (${cameras.length}):</strong><br>
+                        ${cameraList}
+                    </div>
+                `;
+            }
+        }).catch(err => {
+            console.error('Error listing devices:', err);
+        });
+    </script>
+</body>
+</html>

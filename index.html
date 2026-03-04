@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Attendance System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1 class="app-title">Attendance System</h1>
+                <p class="app-subtitle">Face Recognition</p>
+            </div>
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" data-page="register">
+                    <span class="nav-icon">👤</span>
+                    <span class="nav-text">Register Face</span>
+                </button>
+                <button class="nav-btn" data-page="history">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Attendance History</span>
+                </button>
+                <button class="nav-btn" data-page="users">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">Manage Users</span>
+                </button>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <div class="status-dot"></div>
+                    <span id="server-status">Checking...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+
+            <!-- Register Page -->
+            <div id="register-page" class="page active">
+                <div class="page-header">
+                    <h2>Register New Face</h2>
+                    <p class="page-description">Select a teacher from Notion and capture their face for attendance tracking</p>
+                </div>
+
+                <div class="content-grid">
+                    <!-- Registration Form -->
+                    <div class="card">
+                        <h3 class="card-title">Teacher Selection</h3>
+                        <div class="form-group">
+                            <label for="teacher-select">Select Teacher from Notion:</label>
+                            <select id="teacher-select" class="teacher-dropdown">
+                                <option value="">Loading teachers...</option>
+                            </select>
+                            <p class="form-hint">✓ = Already registered | Teachers with active status only</p>
+                        </div>
+                        <div class="divider">
+                            <span>OR</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="username">Enter Name Manually:</label>
+                            <input type="text" id="username" placeholder="Enter teacher name" class="text-input">
+                            <p class="form-hint">Use this if teacher is not in Notion database</p>
+                        </div>
+                    </div>
+
+                    <!-- Camera Capture -->
+                    <div class="card">
+                        <h3 class="card-title">Face Capture</h3>
+                        <div class="video-container">
+                            <video id="register-video" autoplay muted playsinline></video>
+                            <canvas id="register-canvas"></canvas>
+                            <div class="camera-overlay" id="camera-guide">
+                                <div class="face-guide"></div>
+                            </div>
+                        </div>
+                        <div class="button-group">
+                            <button id="start-register-camera" class="btn btn-primary">
+                                <span>📷</span> Start Camera
+                            </button>
+                            <button id="capture-face" class="btn btn-success" disabled>
+                                <span>✓</span> Capture & Register
+                            </button>
+                        </div>
+                        <div id="register-status" class="status"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Page -->
+            <div id="history-page" class="page">
+                <div class="page-header">
+                    <h2>Attendance History</h2>
+                    <p class="page-description">View and track all attendance records</p>
+                </div>
+
+                <!-- Stats Overview -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">📅</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="total-checkins">0</div>
+                            <div class="stat-label">Total Check-ins</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="unique-users">0</div>
+                            <div class="stat-label">Registered Users</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🕐</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="today-checkins">0</div>
+                            <div class="stat-label">Today's Check-ins</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⚡</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="avg-confidence">0%</div>
+                            <div class="stat-label">Avg. Confidence</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="card">
+                    <div class="filter-bar">
+                        <div class="form-group inline">
+                            <label for="user-filter">Filter by user:</label>
+                            <select id="user-filter" class="filter-select">
+                                <option value="all">All Users</option>
+                            </select>
+                        </div>
+                        <div class="form-group inline">
+                            <label for="date-filter">Date:</label>
+                            <input type="date" id="date-filter" class="date-input">
+                        </div>
+                        <button id="refresh-history" class="btn btn-secondary">
+                            <span>🔄</span> Refresh
+                        </button>
+                        <button id="clear-history" class="btn btn-danger">
+                            <span>🗑️</span> Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Attendance Records Table -->
+                <div class="card">
+                    <h3 class="card-title">Recent Attendance Records</h3>
+                    <div id="attendance-list" class="attendance-table"></div>
+                </div>
+            </div>
+
+            <!-- Users Management Page -->
+            <div id="users-page" class="page">
+                <div class="page-header">
+                    <h2>Manage Registered Users</h2>
+                    <p class="page-description">View and manage all registered faces in the system</p>
+                </div>
+
+                <div class="card">
+                    <div class="users-grid" id="registered-users-grid"></div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <div id="loading" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p>Connecting to server...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

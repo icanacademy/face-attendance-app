@@ -1,0 +1,254 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import face_recognition
+import base64
+import json
+import os
+from datetime import datetime
+from PIL import Image
+import io
+import numpy as np
+
+app = Flask(__name__)
+CORS(app)
+
+# Files for storing data
+DB_FILE = 'attendance.json'
+USERS_FILE = 'users.json'
+
+# Initialize files
+if not os.path.exists(DB_FILE):
+    with open(DB_FILE, 'w') as f:
+        json.dump([], f)
+
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, 'w') as f:
+        json.dump([], f)
+
+
+def base64_to_image(base64_string):
+    """Convert base64 string to numpy array (image)"""
+    if 'base64,' in base64_string:
+        base64_string = base64_string.split('base64,')[1]
+
+    img_data = base64.b64decode(base64_string)
+    img = Image.open(io.BytesIO(img_data))
+    # Convert to RGB if necessary
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    return np.array(img)
+
+
+def load_users():
+    """Load registered users from file"""
+    with open(USERS_FILE, 'r') as f:
+        return json.load(f)
+
+
+def save_user(user_data):
+    """Save new user to file"""
+    users = load_users()
+
+    # Check if user already exists and update
+    existing_index = None
+    for i, user in enumerate(users):
+        if user['name'].lower() == user_data['name'].lower():
+            existing_index = i
+            break
+
+    if existing_index is not None:
+        users[existing_index] = user_data
+    else:
+        users.append(user_data)
+
+    with open(USERS_FILE, 'w') as f:
+        json.dump(users, f, indent=2)
+
+
+def load_attendance():
+    """Load attendance records"""
+    with open(DB_FILE, 'r') as f:
+        return json.load(f)
+
+
+def save_attendance(record):
+    """Save attendance record"""
+    records = load_attendance()
+    records.append(record)
+    with open(DB_FILE, 'w') as f:
+        json.dump(records, f, indent=2)
+
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({'status': 'ok', 'message': 'Server is running'})
+
+
+@app.route('/api/register', methods=['POST'])
+def register_user():
+    """Register a new user with their face"""
+    try:
+        data = request.json
+        name = data.get('name')
+        image_data = data.get('image')
+
+        if not name or not image_data:
+            return jsonify({'error': 'Name and image are required'}), 400
+
+        # Convert base64 to image
+        img = base64_to_image(image_data)
+
+        # Find face encodings
+        face_encodings = face_recognition.face_encodings(img)
+
+        if len(face_encodings) == 0:
+            return jsonify({'error': 'No face detected in image. Please try again with better lighting.'}), 400
+
+        if len(face_encodings) > 1:
+            return jsonify({'error': 'Multiple faces detected. Please ensure only one face is in the frame.'}), 400
+
+        # Get the face encoding (128-dimensional)
+        face_encoding = face_encodings[0]
+
+        # Save user data
+        user_data = {
+            'name': name,
+            'encoding': face_encoding.tolist(),  # Convert numpy array to list for JSON
+            'registered_at': datetime.now().isoformat()
+        }
+        save_user(user_data)
+
+        return jsonify({
+            'success': True,
+            'message': f'User {name} registered successfully',
+            'user': {'name': name, 'registered_at': user_data['registered_at']}
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Registration failed: {str(e)}'}), 500
+
+
+@app.route('/api/recognize', methods=['POST'])
+def recognize_face():
+    """Recognize face and log attendance"""
+    try:
+        data = request.json
+        image_data = data.get('image')
+
+        if not image_data:
+            return jsonify({'error': 'Image is required'}), 400
+
+        # Get registered users
+        users = load_users()
+        if not users:
+            return jsonify({'error': 'No registered users found'}), 400
+
+        # Convert base64 to image
+        img = base64_to_image(image_data)
+
+        # Find face encodings in the image
+        face_encodings = face_recognition.face_encodings(img)
+
+        if len(face_encodings) == 0:
+            return jsonify({
+                'success': False,
+                'error': 'No face detected. Please try again.'
+            }), 404
+
+        # Use the first face found
+        unknown_encoding = face_encodings[0]
+
+        # Compare with all registered faces
+        best_match_name = None
+        best_match_distance = float('inf')
+
+        for user in users:
+            known_encoding = np.array(user['encoding'])
+
+            # Calculate face distance (lower is better)
+            distance = face_recognition.face_distance([known_encoding], unknown_encoding)[0]
+
+            if distance < best_match_distance:
+                best_match_distance = distance
+                best_match_name = user['name']
+
+        # Threshold for recognition (0.6 is standard, lower is more strict)
+        THRESHOLD = 0.6
+
+        if best_match_distance > THRESHOLD:
+            return jsonify({
+                'success': False,
+                'error': 'Face not recognized. Please register first.'
+            }), 404
+
+        # Calculate confidence (1 - distance = similarity)
+        confidence = 1 - best_match_distance
+
+        # Log attendance
+        attendance_record = {
+            'name': best_match_name,
+            'timestamp': datetime.now().isoformat(),
+            'confidence': float(confidence)
+        }
+        save_attendance(attendance_record)
+
+        return jsonify({
+            'success': True,
+            'user': best_match_name,
+            'confidence': float(confidence),
+            'timestamp': attendance_record['timestamp']
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Recognition failed: {str(e)}'}), 500
+
+
+@app.route('/api/attendance', methods=['GET'])
+def get_attendance():
+    """Get all attendance records"""
+    try:
+        records = load_attendance()
+        return jsonify({'success': True, 'records': records})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/attendance', methods=['DELETE'])
+def clear_attendance():
+    """Clear all attendance records"""
+    try:
+        with open(DB_FILE, 'w') as f:
+            json.dump([], f)
+        return jsonify({'success': True, 'message': 'Attendance cleared'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    """Get all registered users"""
+    try:
+        users = load_users()
+        # Remove encoding from response for security
+        users_safe = [{'name': u['name'], 'registered_at': u['registered_at']} for u in users]
+        return jsonify({'success': True, 'users': users_safe})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("Face Recognition Attendance System - Backend Server")
+    print("=" * 60)
+    print("Using: face_recognition library (dlib-based)")
+    print("Accuracy: 99.38% on LFW benchmark")
+    print("Server starting on http://localhost:5001")
+    print("\nEndpoints:")
+    print("  POST /api/register    - Register new user")
+    print("  POST /api/recognize   - Recognize face and log time")
+    print("  GET  /api/attendance  - Get attendance records")
+    print("  GET  /api/users       - Get registered users")
+    print("=" * 60)
+
+    app.run(debug=True, host='0.0.0.0', port=5001)
